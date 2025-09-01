@@ -238,23 +238,45 @@ class PromptExtractorUI:
                 lines = parameters_data.split('\n')
                 
                 for i, line in enumerate(lines):
-                    line = line.strip()
+                    line_stripped = line.strip()
                     
-                    if line.lower().startswith('positive prompt:'):
-                        prompt_text = line.split(':', 1)[1].strip()
+                    if line_stripped.lower().startswith('positive prompt:'):
+                        # Extract the initial prompt text after the colon
+                        prompt_text = line_stripped.split(':', 1)[1].strip()
                         
-                        # Check if the prompt continues on next lines
+                        # Collect all following lines until we hit another parameter or end
                         j = i + 1
+                        prompt_lines = [prompt_text] if prompt_text else []
+                        
                         while j < len(lines):
-                            next_line = lines[j].strip()
+                            next_line = lines[j]
+                            next_line_stripped = next_line.strip()
                             
-                            if ':' in next_line or not next_line:
+                            # Stop if we encounter another parameter (contains colon and looks like a parameter)
+                            if ':' in next_line_stripped and any(param in next_line_stripped.lower() for param in 
+                                ['negative prompt', 'steps', 'sampler', 'cfg scale', 'seed', 'size', 'model', 'clip skip']):
                                 break
                             
-                            prompt_text += ' ' + next_line
+                            # Add the line (including empty lines to preserve formatting)
+                            prompt_lines.append(next_line.rstrip())
                             j += 1
-                        
-                        return prompt_text
+                    
+
+                        # Join all lines and clean up
+                        full_prompt = '\n'.join(prompt_lines)
+
+                        # 1) Remove trailing empty lines
+                        full_prompt = full_prompt.rstrip()
+
+                        # 2) Remove leading empty/newline-only lines BUT preserve internal blank lines
+                        # This strips only lines that are entirely whitespace at the very start.
+                        lines_out = full_prompt.splitlines()
+                        k = 0
+                        while k < len(lines_out) and lines_out[k].strip() == '':
+                            k += 1
+                        full_prompt = '\n'.join(lines_out[k:])
+
+                        return full_prompt if full_prompt else None
                 
                 return None
                 
