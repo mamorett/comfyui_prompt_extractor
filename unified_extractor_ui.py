@@ -2,7 +2,7 @@ import json
 import os
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
-from PIL import Image
+from PIL import Image, ImageTk
 import pyperclip
 from typing import Dict, Any, List, Optional
 import threading
@@ -20,13 +20,14 @@ class ComfyUIPromptExtractorUI:
     def __init__(self, root):
         self.root = root
         self.root.title("ComfyUI Positive Prompt Extractor")
-        self.root.geometry("900x700")
+        self.root.geometry("900x800")
         self.root.configure(bg='#f0f0f0')
 
         # Store state
         self.current_results = []
         self.current_files = []
         self.all_prompt_texts = []
+        self.thumbnail_image = None  # Store thumbnail reference
 
         # Configure style
         style = ttk.Style()
@@ -77,19 +78,37 @@ class ComfyUIPromptExtractorUI:
         self.browse_folder_btn = ttk.Button(browse_frame, text="Browse Folder", command=self.browse_folder)
         self.browse_folder_btn.grid(row=0, column=1)
 
+        # Drop zone with thumbnail
+        drop_container = ttk.Frame(file_frame)
+        drop_container.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(10, 0))
+        drop_container.columnconfigure(0, weight=1)
+
         # Drop zone
         drop_text = "Drag & Drop PNG file(s) or folder here" if HAS_DND else "Click here to select PNG file(s)"
         if not HAS_DND:
             drop_text += "\n(Install tkinterdnd2 for drag & drop: pip install tkinterdnd2)"
 
-        self.drop_frame = tk.Frame(file_frame, bg='#e8e8e8', relief='ridge', bd=2, height=100)
-        self.drop_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(10, 0))
+        self.drop_frame = tk.Frame(drop_container, bg='#e8e8e8', relief='ridge', bd=2, height=100)
+        self.drop_frame.grid(row=0, column=0, sticky=(tk.W, tk.E))
         self.drop_frame.grid_propagate(False)
 
         self.drop_label = tk.Label(self.drop_frame, text=drop_text,
                                    bg='#e8e8e8', fg='gray', font=('Arial', 10),
                                    justify='center')
         self.drop_label.place(relx=0.5, rely=0.5, anchor='center')
+
+        # Thumbnail frame (initially hidden)
+        self.thumbnail_frame = ttk.Frame(drop_container)
+        self.thumbnail_frame.grid(row=0, column=1, padx=(10, 0), sticky=(tk.N))
+        
+        self.thumbnail_label = tk.Label(self.thumbnail_frame, text="", bg='white', relief='ridge', bd=1)
+        self.thumbnail_label.grid(row=0, column=0)
+        
+        self.thumbnail_info_label = ttk.Label(self.thumbnail_frame, text="", font=('Arial', 8), foreground='gray')
+        self.thumbnail_info_label.grid(row=1, column=0, pady=(2, 0))
+        
+        # Hide thumbnail initially
+        self.thumbnail_frame.grid_remove()
 
         # Setup drag and drop if available
         if HAS_DND:
@@ -191,6 +210,41 @@ class ComfyUIPromptExtractorUI:
         self.progress.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 5))
         self.progress.grid_remove()  # Hide initially
 
+    def create_thumbnail(self, image_path, max_size=(240, 240)):
+        """Create a thumbnail from the image file"""
+        try:
+            with Image.open(image_path) as img:
+                # Create thumbnail
+                img.thumbnail(max_size, Image.Resampling.LANCZOS)
+                
+                # Convert to PhotoImage for tkinter
+                photo = ImageTk.PhotoImage(img)
+                
+                # Get image info
+                original_size = Image.open(image_path).size
+                info_text = f"{original_size[0]}×{original_size[1]}\n{os.path.basename(image_path)}"
+                
+                return photo, info_text
+        except Exception as e:
+            print(f"Error creating thumbnail: {e}")
+            return None, None
+
+    def show_thumbnail(self, image_path):
+        """Show thumbnail for single image"""
+        thumbnail, info_text = self.create_thumbnail(image_path)
+        if thumbnail and info_text:
+            self.thumbnail_image = thumbnail  # Keep reference to prevent garbage collection
+            self.thumbnail_label.configure(image=thumbnail)
+            self.thumbnail_info_label.configure(text=info_text)
+            self.thumbnail_frame.grid()
+        else:
+            self.hide_thumbnail()
+
+    def hide_thumbnail(self):
+        """Hide the thumbnail"""
+        self.thumbnail_frame.grid_remove()
+        self.thumbnail_image = None
+
     # --------------------------
     # Event handlers / IO helpers
     # --------------------------
@@ -269,8 +323,12 @@ class ComfyUIPromptExtractorUI:
         # Update UI
         if len(valid_files) == 1:
             self.file_path_var.set(os.path.basename(valid_files[0]))
+            # Show thumbnail for single file
+            self.show_thumbnail(valid_files[0])
         else:
             self.file_path_var.set(f"{len(valid_files)} PNG files selected")
+            # Hide thumbnail for multiple files
+            self.hide_thumbnail()
 
         self.current_files = valid_files
         self.status_var.set("Processing...")
@@ -733,6 +791,8 @@ class ComfyUIPromptExtractorUI:
         self.current_results = []
         self.current_files = []
         self.all_prompt_texts = []
+        # Hide thumbnail when clearing
+        self.hide_thumbnail()
 
 
 def main():
