@@ -411,7 +411,7 @@ class ComfyUIPromptExtractorUI:
             raise Exception(f"Error reading PNG file: {e}")
 
     def extract_positive_prompts_parameters(self, file_path: str) -> Dict[str, Any]:
-        """Extract positive prompt using Parameters metadata (the second code's logic)."""
+        """Extract positive prompt using Parameters metadata and direct PNG properties."""
         try:
             with Image.open(file_path) as img:
                 if img.format != 'PNG':
@@ -428,6 +428,7 @@ class ComfyUIPromptExtractorUI:
                     'extraction_method': 'parameters'
                 }
 
+                # First, try the ORIGINAL parameters extraction
                 prompt_text = self.extract_positive_from_parameters_strict(metadata)
                 if prompt_text:
                     result['positive_prompts'].append({
@@ -437,11 +438,23 @@ class ComfyUIPromptExtractorUI:
                         'title': 'Parameters',
                         'source': 'parameters'
                     })
+                else:
+                    # If original method fails, try PNG properties as fallback
+                    prompt_text = self.extract_positive_from_png_properties(metadata)
+                    if prompt_text:
+                        result['positive_prompts'].append({
+                            'text': prompt_text,
+                            'node_id': 'png_properties',
+                            'node_type': 'png_properties',
+                            'title': 'PNG Properties',
+                            'source': 'png_properties'
+                        })
 
                 return result
 
         except Exception as e:
             raise Exception(f"Error reading PNG file: {e}")
+
 
     def extract_positive_from_workflow(self, workflow_data: Dict, processed_nodes: set) -> List[Dict]:
         """Extract positive prompts from workflow nodes"""
@@ -550,6 +563,47 @@ class ComfyUIPromptExtractorUI:
                             processed_nodes.add(key)
 
         return positive_prompts
+    
+
+    def extract_positive_from_png_properties(self, metadata: Dict) -> Optional[str]:
+        """Extract positive prompt directly from PNG properties like 'Positive prompt:'"""
+        try:
+            # Look for direct positive prompt properties
+            possible_keys = [
+                'Positive prompt',
+                'positive prompt', 
+                'Positive Prompt',
+                'positive_prompt'
+            ]
+            
+            for key in possible_keys:
+                if key in metadata:
+                    value = metadata[key]
+                    
+                    # Handle different data types
+                    if isinstance(value, bytes):
+                        try:
+                            value = value.decode('utf-8', errors='ignore')
+                        except Exception:
+                            value = str(value)
+                    elif not isinstance(value, str):
+                        value = str(value)
+                    
+                    # Clean and return if not empty
+                    if value and value.strip():
+                        result = value.strip()
+                        # Remove surrounding quotes if present
+                        if ((result.startswith('"') and result.endswith('"')) or 
+                            (result.startswith("'") and result.endswith("'"))):
+                            result = result[1:-1]
+                        return result
+            
+            return None
+            
+        except Exception as e:
+            print(f"PNG properties extractor error: {e}")
+            return None
+
 
     def extract_positive_from_parameters_strict(self, metadata: Dict) -> Optional[str]:
         """Exact-style extractor from the second code, with robust type handling to avoid .strip on list."""
